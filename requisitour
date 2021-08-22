@@ -1,0 +1,392 @@
+#!/usr/bin/python
+import sys
+import requests
+import argparse
+import json
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument('-htj', '--headers-to-json', help='print raw headers in json/dict format', action='store')
+parser.add_argument('-fdtj', '--form-data-to-json', help='print form data in json/dict format')
+
+#import readline
+
+class Command():
+    """"
+    A command with name, description, and function to execute.
+    The command can have modifiers, wich is a alias that execute
+    the same function but can behave different
+    """
+
+    name = None
+    description = None
+    args = None
+    modifiers = []
+
+    def __init__(self, function, name=None, description="none", modifiers:list=None) -> None:
+
+        if (not name):
+            self.name = function.__name__
+        else:
+            self.name = name
+
+        self.description = description
+        self.function = function
+
+        if (modifiers):
+            self.modifiers = modifiers
+
+    def function(self, args:list):
+        pass
+
+class Commands(list):
+    """A list of commands with execute function"""
+
+    def __init__(self) -> None:
+        pass
+    
+    def add_command(self, command:Command):
+        self.append(command)
+    
+    def execute(self, name:str, args:list):
+        """Execute a command from command list with a given args"""
+
+        for command in self:
+            if (name == command.name):
+                command.function(args)
+                return
+            elif (name in command.modifiers):
+                command.function(args, modifier=name)
+                return
+
+# TODO
+class Completer(object):  # Custom completer
+    def __init__(self, options):
+        self.options = sorted(options)
+
+    def complete(self, text, state):
+        if state == 0:  # on first trigger, build possible matches
+            if text:  # cache matches (entries that start with entered text)
+                self.matches = [s for s in self.options 
+                                    if s and s.startswith(text)]
+            else:  # no text entered, all matches possible
+                self.matches = self.options[:]
+        # return match indexed by state
+        try: 
+            return self.matches[state]
+        except IndexError:
+            return None
+
+# Terminal colors
+class C:
+    pur = '\033[95m'
+    blu = '\033[94m'
+    cya = '\033[96m'
+    gre = '\033[92m'
+    ora = '\033[93m'
+    red = '\033[91m'
+    ec = '\033[0m'
+    bold = '\033[1m'
+    underline = '\033[4m'
+
+# Util functions
+def printJson(dict):
+    print(json.dumps(dict, indent=4))
+
+def printc(string, color:C):
+    sys.stderr.write(color + string + C.ec + '\n')
+
+def inputc(string, color:C):
+    return input(color+string+C.ec)
+
+def setc(color:C):
+    print(color, end="")
+
+def endc():
+    print(C.ec, end="")
+
+def exit():
+    printc("Exiting...", C.ora)
+    quit(0)
+
+def parseRawRequest(raw:str) -> dict:
+    """Returns a dict of a raw http request"""
+    raw = raw.splitlines()
+    line1 = raw[0].split(' ')
+
+    method = line1[0]
+    path = line1[1]
+    dict = {'headers':{}}
+
+    for line in raw[1:]:
+        attr = line.split(': ')
+        dict['headers'][attr[0]] = attr[1]
+    
+    dict['url'] = "https://"+dict['headers']['Host']+path
+    return dict
+
+def formDataToJson(form:str) -> dict:
+    """Returns a dict of a http form data"""
+    dict = {}
+    separated = form.split('&')
+
+    for s in separated:
+        key   = s.split('=')[0]
+        value = s.split('=')[1]
+        dict[key] = value
+
+    return dict
+# Main program data
+data = {
+    "url":"",
+    "path":"./save.req",
+    
+    "params":{
+        "key" : "value"    
+    },
+
+    "headers" : {
+        "Host":None,
+        "Origin":None
+    },
+
+    "body":{
+
+    },
+
+    "last_response" : {
+        'content': None
+    }
+
+}
+
+# COMMANDS FUNCTIONS
+def help(args:list, modifier=None):
+    setc(C.blu)
+    print("\tCommands: Set, Get, Options, Request, ...\n")
+    print("\tSet  <attr> <value>            -   Set attribute value")
+    print("\tGet  <attr> <value>            -   get attribute value\n")
+
+    print("\tSeth <attr> <value>            -   Set Header attribute")
+    print("\tgeth <attr>                    ->  Get Header attr value")
+    print("\tSetb <attr> <value>            -   Set Body attribute")
+    print("\tgetb <attr>                    ->  Get Body attr value")
+    print("\tsetp <attr> <value>            -   set url param")
+    print("\tunset[h,b] <attr>              -   ...\n")
+
+    print("\tdata                           ->  Get all attr and values")
+    print("\tRequest <http method>          -   Make HTTP Request")
+    print("\tRequestc <count> <http method> -   Make HTTP Request x times")
+
+    print("\tSave <path>                    -   Save current Data")
+    print("\tLoad <path>                    -   Loads saved data\n")
+    print("\tLoadr <path>                   -   Loads from raw request\n")
+    print("\tLoadb <path>                   -   Loads json body from file\n")
+    endc()
+
+def set(args:list, modifier=None):
+    key = args[1]
+    value = args[2]
+
+    if not (modifier):
+        if not (key in data):
+            raise IndexError
+
+        if (key == 'headers' or key == "body"):
+            raise IndexError
+
+        data[key] = value
+        return
+
+    if ( modifier == 'setb'):
+        data['body'][key] = value
+    elif ( modifier == 'seth'):
+        data['header'][key] = value
+    elif ( modifier == 'setp'):
+        data['params'][key] = value
+
+def get(args:list, modifier=None):
+    key = args[1]
+
+    if not (modifier):
+        print(data[key])
+        return
+    
+    if (modifier == 'getb'):
+        print(data['body'][key])
+    elif (modifier == 'geth'):
+        print(data['headers'][key])
+    elif (modifier == 'getp'):
+        print(data['params'][key])
+        
+def unset(args:list, modifier=None):
+    key = args[1]
+
+    if not (modifier):
+        data['headers'].pop(key)
+        return
+    
+    if (modifier == 'unseth'):
+        data['headers'].pop(key)
+    elif (modifier == 'unsetb'):
+        data['body'].pop(key)
+    elif (modifier == 'unsetp'):
+        data["params"].pop(key)
+
+def data_(args:list, modifier=None):
+    setc(C.blu)
+    printJson(data)
+    endc()
+
+def save(args:list, modifier=None):
+    try:
+        with open(args[1], "w") as f:
+            json.dump(data, f, indent=4)
+
+        data['path'] = args[1]
+        printc(f"Saved on {args[1]}", C.gre)
+
+    except UnboundLocalError:
+        with open(data['path'], "w") as f:
+            json.dump(data, f, indent=4)
+
+        printc(f"Saved on {data['path']}", C.gre)
+
+def load(args:list, modifier=None):
+    try:
+        stream = open(args[1], "r")
+    except UnboundLocalError:
+        stream = open(data['path'], "r")
+            
+    if not (modifier):
+        data.update(json.load(stream))
+        data['path'] = args[1]
+    
+    if (modifier == "loadr"): # Load raw headers
+        loaded = stream.read()
+        loaded = parseRawRequest(loaded)
+        data.update(loaded)
+    
+    if (modifier == "loadb"):
+        loaded = json.load(stream)
+        dict = {'body': loaded}
+        data.update(dict)
+        
+    try: printc(f"Loaded from {args[1]}", C.gre)
+    except: printc(f"Loaded from {data['path']}", C.gre)
+
+def request(args:list, modifier=None):
+    printc(f"Making HTTP request", C.ora)
+
+    method = args[1].lower()
+    url = data['url']
+
+    def execute():
+        if (method == "post"):
+            res = requests.post(url=url, data=data['body'], params=data['params'], headers=data['headers'])
+            print(res)
+            print(res.content)
+            data['last_response']['content'] = res.text
+
+        if (method == "get"):
+            res = requests.get(url=url, data=data['body'], params=data["params"], headers=data['headers'])
+
+            print(res)
+            print(res.content)
+            data['last_response']['content'] = res.text
+
+        if (method == "patch"):
+            res = requests.patch(url=url, json=data['body'], headers=data['headers'])
+            
+            print(res)
+            print(res.content)
+            data['last_response']['content'] = res.text
+
+    if not (modifier):
+        execute()
+        return
+    
+    if (modifier == "requestc"):
+        count = int(args[1])
+        method = args[1].lower()
+
+        for x in range(0, count):
+            execute()
+
+
+def interactive():
+    global data
+
+    # TODO: completer
+    commands = Commands()
+
+    commands.add_command(Command( set, modifiers=['setb', 'seth','setp']))
+    commands.add_command(Command( get, modifiers=['getb', 'geth','getp']))
+    commands.add_command(Command( unset, modifiers=['unsetb', 'unseth','unsetp']))
+    commands.add_command(Command( data_, name="data"))
+    commands.add_command(Command( load, modifiers=['loadr', 'loadb']))
+    commands.add_command(Command( request, modifiers=['requestc']))
+    commands.add_command(Command( save))
+    commands.add_command(Command( help))
+
+    comp = Completer([ x.name for x in commands]).complete
+
+    import readline
+    readline.set_completer(comp)
+    readline.parse_and_bind('tab: complete')
+
+    action = inputc("> ", C.gre)
+    args = action.split(" ", maxsplit=2)
+    action = args[0]
+
+    for arg in args:
+        arg = str(arg)
+
+    action = action.lower()
+    commands.execute(action, args)
+
+
+    if (action == "exit" or action == "quit"):
+        exit()
+
+def arguments():
+    args = parser.parse_args()
+
+    if (args.headers_to_json):
+        headers = parseRawRequest(args.headers_to_json)['headers']
+        printJson(headers)
+    
+    if (args.form_data_to_json):
+        dict = formDataToJson(args.form_data_to_json)
+        printJson(dict)
+
+if __name__ == "__main__":
+
+    banner = \
+    """
+    _____                  _     _ _                   
+    |  __ \                (_)   (_) |                  
+    | |__) |___  __ _ _   _ _ ___ _| |_ ___  _   _ _ __ 
+    |  _  // _ \/ _` | | | | / __| | __/ _ \| | | | '__|
+    | | \ \  __/ (_| | |_| | \__ \ | || (_) | |_| | |   
+    |_|  \_\___|\__, |\__,_|_|___/_|\__\___/ \__,_|_|   
+                   | |                                  
+                   |_|                                  
+    """
+    printc(banner, C.red)
+    
+
+    if (sys.argv.__len__() == 1):
+
+        while (True):
+            try:
+                interactive()
+            except UnboundLocalError:
+                printc(f"Error missing arguments", C.red)
+            except KeyboardInterrupt:
+                exit()
+            except Exception as e:
+                printc(f"Error {e}", C.red)
+    else:
+        arguments()
+

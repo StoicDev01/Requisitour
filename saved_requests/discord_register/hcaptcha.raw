@@ -1,0 +1,15 @@
+POST /getcaptcha?s=f5561ba9-8f1e-40ca-9b5b-a0b3f719ef34 HTTP/3
+Host: hcaptcha.com
+User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:90.0) Gecko/20100101 Firefox/90.0
+Accept: application/json
+Accept-Language: en-US,en;q=0.5
+Accept-Encoding: gzip, deflate, br
+Content-type: application/x-www-form-urlencoded
+Content-Length: 8277
+Origin: https://newassets.hcaptcha.com
+DNT: 1
+Connection: keep-alive
+Referer: https://newassets.hcaptcha.com/
+Sec-Fetch-Dest: empty
+Sec-Fetch-Mode: cors
+Sec-Fetch-Site: same-site
