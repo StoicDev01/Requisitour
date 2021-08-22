@@ -4,6 +4,7 @@ import requests
 import argparse
 import json
 
+ssstr = "TEST"
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-htj', '--headers-to-json', help='print raw headers in json/dict format', action='store')
