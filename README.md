@@ -2,5 +2,5 @@
 
 Interactive command line interface for http requests
 
-## Todo:
+## Todo
   * Auto completions
