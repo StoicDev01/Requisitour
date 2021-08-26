@@ -2,13 +2,13 @@
 import sys
 import requests
 import argparse
+import readline
+from pathlib import Path
 import json
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-htj', '--headers-to-json', help='print raw headers in json/dict format', action='store')
 parser.add_argument('-fdtj', '--form-data-to-json', help='print form data in json/dict format')
-
-#import readline
 
 class Command():
     """"
@@ -19,10 +19,12 @@ class Command():
 
     name = None
     description = None
+
     args = None
+    acceptable_args = []
     modifiers = []
 
-    def __init__(self, function, name=None, description="none", modifiers:list=None) -> None:
+    def __init__(self, function, name=None, description="none", modifiers:list=None, acceptable_args=None) -> None:
 
         if (not name):
             self.name = function.__name__
@@ -30,6 +32,7 @@ class Command():
             self.name = name
 
         self.description = description
+        self.acceptable_args = acceptable_args
         self.function = function
 
         if (modifiers):
@@ -58,18 +61,76 @@ class Commands(list):
                 command.function(args, modifier=name)
                 return
 
-# TODO
-class Completer(object):  # Custom completer
-    def __init__(self, options):
-        self.options = sorted(options)
+    def completions(self):
+        """Return a object with each command name and acceptable args"""
+
+        object = []
+
+        for x in self:
+            name = x.name
+            args = x.acceptable_args
+
+            if (args == None):
+                args = object[0]["args"]
+
+            object.append({
+                "name": name,
+                "args": args
+            })
+        
+        return object
+
+class Completer():
+    """tab completions"""
+
+    def __init__(self, commands_obj):
+        self.commands_obj = commands_obj
+
+    def parse_args(self, acc_arg:str, context:str):
+        if (acc_arg.startswith("<dir>")):
+            #print(context)
+            if ( "/" in context):
+                if not (context.endswith("/")):
+                    context += "/"
+                
+                p = Path(context)
+                res = [ context+x.name for x in p.iterdir()]
+            else:
+                p = Path(".")
+                res = [ x.name for x in p.iterdir()]
+            #print(res)
+        
+        elif (acc_arg.startswith("<http>")):
+            res = ["POST", "PUT", "GET", "DELETE"]
+        return res
 
     def complete(self, text, state):
-        if state == 0:  # on first trigger, build possible matches
-            if text:  # cache matches (entries that start with entered text)
-                self.matches = [s for s in self.options 
-                                    if s and s.startswith(text)]
-            else:  # no text entered, all matches possible
-                self.matches = self.options[:]
+        buffer = readline.get_line_buffer()
+
+        if state == 0:  # on first trigger
+            # complete arguments
+            if (" " in buffer):
+                # get command name
+                splitted = buffer.split(" ")
+                name  = splitted[0]
+                index = splitted.__len__()-2
+                
+                # get command args
+                command = [x for x in self.commands_obj if x['name'].startswith(name)][0]
+                acc_arg = command['args'][index]
+
+                # Parse acceptable arguments
+                acceptable_args = self.parse_args(acc_arg, text)
+                self.matches = [s for s in acceptable_args if s and s.startswith(text)]
+
+            # complete command name
+            elif text: 
+                    name = buffer
+                    self.matches = [ x['name'] for x in self.commands_obj if x['name'].startswith(name)]
+            # no text entered
+            else:  
+                self.matches = [ x['name'] for x in self.commands_obj ] # show all commands
+
         # return match indexed by state
         try: 
             return self.matches[state]
@@ -135,6 +196,7 @@ def formDataToJson(form:str) -> dict:
         dict[key] = value
 
     return dict
+
 # Main program data
 data = {
     "url":"",
@@ -159,8 +221,9 @@ data = {
 
 }
 
-# COMMANDS FUNCTIONS
+# COMMANDS FUNCTIONS 
 def help(args:list, modifier=None):
+    # hardcoded for now
     setc(C.blu)
     print("\tCommands: Set, Get, Options, Request, ...\n")
     print("\tSet  <attr> <value>            -   Set attribute value")
@@ -312,26 +375,23 @@ def request(args:list, modifier=None):
         for x in range(0, count):
             execute()
 
-
 def interactive():
     global data
 
-    # TODO: completer
     commands = Commands()
 
-    commands.add_command(Command( set, modifiers=['setb', 'seth','setp']))
-    commands.add_command(Command( get, modifiers=['getb', 'geth','getp']))
-    commands.add_command(Command( unset, modifiers=['unsetb', 'unseth','unsetp']))
-    commands.add_command(Command( data_, name="data"))
-    commands.add_command(Command( load, modifiers=['loadr', 'loadb']))
-    commands.add_command(Command( request, modifiers=['requestc']))
-    commands.add_command(Command( save))
+    commands.add_command(Command( set,      modifiers=['setb', 'seth','setp'],          acceptable_args=["<key>", "<value>"]))
+    commands.add_command(Command( get,      modifiers=['getb', 'geth','getp'],          acceptable_args=["<key>"]))
+    commands.add_command(Command( unset,    modifiers=['unsetb', 'unseth','unsetp'],    acceptable_args=["<key>", "<value>"]))
+    commands.add_command(Command( data_,    name="data",))
+    commands.add_command(Command( load,     modifiers=['loadr', 'loadb'],               acceptable_args=["<dir>"]))
+    commands.add_command(Command( request,  modifiers=['requestc'],                     acceptable_args=["<http>"]))
+    commands.add_command(Command( save,                                                 acceptable_args=["<dir>"]))
     commands.add_command(Command( help))
 
-    comp = Completer([ x.name for x in commands]).complete
-
-    import readline
-    readline.set_completer(comp)
+    completer = Completer(commands.completions())
+    readline.set_completer(completer.complete)
+    readline.set_completer_delims(" ")
     readline.parse_and_bind('tab: complete')
 
     action = inputc("> ", C.gre)
@@ -343,7 +403,6 @@ def interactive():
 
     action = action.lower()
     commands.execute(action, args)
-
 
     if (action == "exit" or action == "quit"):
         exit()
@@ -374,7 +433,6 @@ if __name__ == "__main__":
     """
     printc(banner, C.red)
     
-
     if (sys.argv.__len__() == 1):
 
         while (True):
