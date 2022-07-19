@@ -10,7 +10,7 @@ Interactive command line interface for http requests
 - write request get to get a request from google.com
 
 Notice that sites like google.com need headers, you can set headers with seth
-Sometimes the site needs data, to set json body data use setb
+,sometimes the site needs data, to set json body data use setb
 
 Tip: You can see what the site expects and the requests that your browser makes with your browser in network monitor mode
 
